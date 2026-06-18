@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT UNIQUE,
     password TEXT,
     nickname TEXT,
-    balance REAL DEFAULT 0.0
+    balance REAL DEFAULT 0.0,
+    device_token TEXT,
+    avatar BYTEA
 )""")
 
 cursor.execute("""
@@ -42,10 +44,12 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS messages (
     id SERIAL PRIMARY KEY,
     chat_id TEXT,
-    sender_uid TEXT,
-    sender_name TEXT,
+    user_uid TEXT,
+    username TEXT,
     text TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    media BYTEA,
+    media_type TEXT,
+    timestamp DOUBLE PRECISION
 )""")
 
 cursor.execute("""
@@ -55,63 +59,100 @@ CREATE TABLE IF NOT EXISTS user_friends (
     PRIMARY KEY (user_uid, friend_uid)
 )""")
 
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS group_members (
+    chat_id TEXT,
+    user_uid TEXT,
+    PRIMARY KEY (chat_id, user_uid)
+)""")
+
 st.set_page_config(page_title="PaLexis-Chat", page_icon="💜", layout="wide")
 
 controller = CookieController()
 
 st.markdown("""
 <style>
-    /* Блокируем глобальные цвета приложения под тёмную тему */
-    .stApp, html, body, [data-testid="stAppViewContainer"] { 
-        background-color: #0e1621 !important; 
+    /* Мягкий неяркий тёмный градиент на фон всего приложения */
+    .stApp, html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { 
+        background: linear-gradient(135deg, #0f111a 0%, #151926 50%, #1a192e 100%) !important; 
         color: #ffffff !important; 
+    }
+    
+    header[data-testid="stHeader"] {
+        background: transparent !important;
     }
     
     /* Текст во всем приложении */
-    h1, h2, h3, h4, h5, h6, p, span, label, div { 
-        color: #ffffff !important; 
+    h1, h2, h3, h4, h5, h6, p, span, label, div, small { 
+        color: #e2e8f0 !important; 
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     }
     
-    /* Поле ввода сообщения */
-    .stChatInputContainer iframe { background-color: #17212b !important; }
-    .stChatInput textarea { color: #ffffff !important; background-color: #17212b !important; }
-    
-    /* Сообщения в чате */
-    .stChatMessage {
-        background-color: #182533 !important;
+    /* Поле ввода сообщения (эффект стекла) */
+    .stChatInputContainer iframe { background-color: rgba(30, 41, 59, 0.7) !important; }
+    .stChatInput textarea { 
+        color: #ffffff !important; 
+        background-color: rgba(30, 41, 59, 0.7) !important;
         border-radius: 12px !important;
-        padding: 10px !important;
-        margin-bottom: 10px !important;
+    }
+    
+    /* Сообщения в чате: сглаженные углы и легкое свечение */
+    .stChatMessage {
+        background-color: rgba(30, 41, 59, 0.5) !important;
+        border-radius: 16px !important;
+        padding: 12px 16px !important;
+        margin-bottom: 12px !important;
         color: #ffffff !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
     
     /* Боковое меню (скрываем) */
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="collapsedControl"] { display: none !important; }
     
-    /* Кнопки меню верхние */
+    /* Верхние кнопки табов меню */
     div.stButton > button {
-        background-color: transparent !important;
-        color: #708599 !important;
-        border: none !important;
-        font-size: 20px !important;
+        background-color: rgba(255, 255, 255, 0.03) !important;
+        color: #94a3b8 !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 12px !important;
+        font-size: 16px !important;
         font-weight: 600 !important;
-        padding: 8px 16px !important;
-        transition: color 0.3s ease;
+        padding: 10px 20px !important;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
-    div.stButton > button:hover { color: #5288c1 !important; background-color: transparent !important; }
+    div.stButton > button:hover { 
+        color: #8b5cf6 !important; 
+        background-color: rgba(139, 92, 246, 0.1) !important;
+        border-color: rgba(139, 92, 246, 0.3) !important;
+        transform: translateY(-1px);
+    }
     div.stButton > button:disabled {
-        color: #5288c1 !important;
-        border-bottom: 3px solid #5288c1 !important;
-        border-radius: 0px !important;
-        background-color: transparent !important;
+        color: #ffffff !important;
+        background: linear-gradient(90deg, #6d28d9 0%, #4c1d95 100%) !important;
+        border: none !important;
+        box-shadow: 0 4px 12px rgba(109, 40, 217, 0.3);
+        opacity: 1 !important;
     }
     
-    /* Обычные инпуты (ввод текста/id) */
-    input {
-        background-color: #17212b !important;
+    /* Поля ввода (Инпуты) */
+    input, [data-testid="stTextInput"] div[data-baseweb="input"], [data-testid="stFileUploader"] {
+        background-color: rgba(15, 23, 42, 0.6) !important;
         color: #ffffff !important;
-        border: 1px solid #24303f !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 12px !important;
+        padding: 4px 8px;
+    }
+    input:focus {
+        border-color: #8b5cf6 !important;
+    }
+    
+    /* Всплывающие поповеры */
+    [data-testid="stPopoverBody"] {
+        background-color: #151926 !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 16px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -129,7 +170,7 @@ if "current_chat" not in st.session_state:
 if not st.session_state.logged_in:
     saved_token = controller.get("device_token")
     if saved_token:
-        cursor.execute("SELECT uid, username, nickname FROM users WHERE device_token = ?", (saved_token,))
+        cursor.execute("SELECT uid, username, nickname FROM users WHERE device_token = %s", (saved_token,))
         user = cursor.fetchone()
         if user:
             st.session_state.logged_in = True
@@ -142,15 +183,15 @@ def set_tab(tab_name):
 
 col_logo, col_t1, col_t2, col_t3, col_t4, _ = st.columns([2, 1.5, 1.5, 1.5, 1.5, 4.5])
 with col_logo:
-    st.markdown("<h2 style='margin:0; color:#5288c1; font-weight:700;'>PaLexis-Chat 0.2</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin:0; background: linear-gradient(90deg, #a78bfa, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight:800;'>PaLexis 0.2</h2>", unsafe_allow_html=True)
 
 if st.session_state.logged_in:
-    with col_t1: st.button("Чаты", key="t_chats", disabled=(st.session_state.active_tab == "Чаты"), on_click=set_tab, args=("Чаты",))
-    with col_t2: st.button("Друзья", key="t_friends", disabled=(st.session_state.active_tab == "Друзья"), on_click=set_tab, args=("Друзья",))
-    with col_t3: st.button("Группы / Каналы", key="t_chans", disabled=(st.session_state.active_tab == "Каналы"), on_click=set_tab, args=("Каналы",))
-    with col_t4: st.button("Профиль", key="t_prof", disabled=(st.session_state.active_tab == "Профиль"), on_click=set_tab, args=("Профиль",))
+    with col_t1: st.button("💬 Чаты", key="t_chats", disabled=(st.session_state.active_tab == "Чаты"), on_click=set_tab, args=("Чаты",))
+    with col_t2: st.button("👥 Друзья", key="t_friends", disabled=(st.session_state.active_tab == "Друзья"), on_click=set_tab, args=("Друзья",))
+    with col_t3: st.button("📢 Группы / Каналы", key="t_chans", disabled=(st.session_state.active_tab == "Каналы"), on_click=set_tab, args=("Каналы",))
+    with col_t4: st.button("⚙️ Профиль", key="t_prof", disabled=(st.session_state.active_tab == "Профиль"), on_click=set_tab, args=("Профиль",))
 else:
-    with col_t1: st.button("Вход / Регистрация", disabled=True)
+    with col_t1: st.button("🔑 Вход / Регистрация", disabled=True)
 
 st.write("---")
 
@@ -164,19 +205,19 @@ if not st.session_state.logged_in:
     
     if choice == "Регистрация":
         if st.button("Создать аккаунт", use_container_width=True):
-            cursor.execute("SELECT * FROM users WHERE username = ?", (login_user,))
+            cursor.execute("SELECT * FROM users WHERE username = %s", (login_user,))
             if cursor.fetchone():
                 st.error("Пользователь с таким именем уже существует!")
             elif login_user and login_pass:
                 new_uid = str(random.randint(100000, 999999))
                 while True:
-                    cursor.execute("SELECT uid FROM users WHERE uid = ?", (new_uid,))
+                    cursor.execute("SELECT uid FROM users WHERE uid = %s", (new_uid,))
                     if not cursor.fetchone(): break
                     new_uid = str(random.randint(100000, 999999))
                 
                 hashed_pass = hashlib.sha256(login_pass.encode()).hexdigest()
                 dev_token = str(uuid.uuid4())
-                cursor.execute("INSERT INTO users (uid, username, password, avatar, device_token, nickname) VALUES (?, ?, ?, NULL, ?, ?)", 
+                cursor.execute("INSERT INTO users (uid, username, password, avatar, device_token, nickname) VALUES (%s, %s, %s, NULL, %s, %s)", 
                                (new_uid, login_user, hashed_pass, dev_token, login_user))
                 conn.commit()
                 controller.set("device_token", dev_token)
@@ -185,7 +226,7 @@ if not st.session_state.logged_in:
     elif choice == "Вход":
         if st.button("Войти", use_container_width=True):
             hashed_pass = hashlib.sha256(login_pass.encode()).hexdigest()
-            cursor.execute("SELECT uid, username, device_token, nickname FROM users WHERE username = ? AND password = ?", (login_user, hashed_pass))
+            cursor.execute("SELECT uid, username, device_token, nickname FROM users WHERE username = %s AND password = %s", (login_user, hashed_pass))
             user = cursor.fetchone()
             if user:
                 st.session_state.logged_in = True
@@ -194,7 +235,7 @@ if not st.session_state.logged_in:
                 st.session_state.nickname = user[3] if user[3] else user[1]
                 
                 dev_token = user[2] if user[2] else str(uuid.uuid4())
-                cursor.execute("UPDATE users SET device_token = ? WHERE uid = ?", (dev_token, user[0]))
+                cursor.execute("UPDATE users SET device_token = %s WHERE uid = %s", (dev_token, user[0]))
                 conn.commit()
                 controller.set("device_token", dev_token)
                 st.rerun()
@@ -236,8 +277,8 @@ if st.session_state.active_tab == "Чаты":
             FROM chats c
             LEFT JOIN group_members gm ON c.chat_id = gm.chat_id
             WHERE c.is_channel = 2 
-               OR (c.is_channel = 0 AND (c.p2p_user1 = ? OR c.p2p_user2 = ?))
-               OR (c.is_channel = 1 AND (c.creator_uid = ? OR gm.user_uid = ?))
+               OR (c.is_channel = 0 AND (c.p2p_user1 = %s OR c.p2p_user2 = %s))
+               OR (c.is_channel = 1 AND (c.creator_uid = %s OR gm.user_uid = %s))
         """, (st.session_state.user_uid, st.session_state.user_uid, st.session_state.user_uid, st.session_state.user_uid))
         all_chats = cursor.fetchall()
         
@@ -260,10 +301,10 @@ if st.session_state.active_tab == "Чаты":
                         st.session_state.current_chat = ch_id
                         st.rerun()
                 with c_d:
-                    if st.button("🗑️", key=f"del_{ch_id}"):
-                        cursor.execute("DELETE FROM chats WHERE chat_id = ?", (ch_id,))
-                        cursor.execute("DELETE FROM messages WHERE chat_id = ?", (ch_id,))
-                        cursor.execute("DELETE FROM group_members WHERE chat_id = ?", (ch_id,))
+                    if st.button("🗑", key=f"del_{ch_id}"):
+                        cursor.execute("DELETE FROM chats WHERE chat_id = %s", (ch_id,))
+                        cursor.execute("DELETE FROM messages WHERE chat_id = %s", (ch_id,))
+                        cursor.execute("DELETE FROM group_members WHERE chat_id = %s", (ch_id,))
                         conn.commit()
                         st.session_state.current_chat = None
                         st.rerun()
@@ -271,7 +312,7 @@ if st.session_state.active_tab == "Чаты":
     with col_right:
         if st.session_state.current_chat:
             ch_id = st.session_state.current_chat
-            cursor.execute("SELECT chat_name, is_channel, creator_uid, p2p_user1, p2p_user2, p2p_name1, p2p_name2 FROM chats WHERE chat_id = ?", (ch_id,))
+            cursor.execute("SELECT chat_name, is_channel, creator_uid, p2p_user1, p2p_user2, p2p_name1, p2p_name2 FROM chats WHERE chat_id = %s", (ch_id,))
             ch_info = cursor.fetchone()
             
             if ch_info:
@@ -279,7 +320,7 @@ if st.session_state.active_tab == "Чаты":
                 display_name = ch_title
                 if is_chan == 0:
                     display_name = n1 if st.session_state.user_uid == u1 else n2
-
+                
                 type_label = "👥 Приватная Группа" if is_chan == 1 else ("📢 Канал" if is_chan == 2 else "💬 Личный диалог")
                 
                 col_title_text, col_actions = st.columns([2, 2])
@@ -292,9 +333,9 @@ if st.session_state.active_tab == "Чаты":
                             new_chat_title = st.text_input("Новое название чата:", value=display_name)
                             if st.button("Сохранить название", key=f"save_title_{ch_id}"):
                                 if st.session_state.user_uid == u1:
-                                    cursor.execute("UPDATE chats SET p2p_name1 = ? WHERE chat_id = ?", (new_chat_title, ch_id))
+                                    cursor.execute("UPDATE chats SET p2p_name1 = %s WHERE chat_id = %s", (new_chat_title, ch_id))
                                 else:
-                                    cursor.execute("UPDATE chats SET p2p_name2 = ? WHERE chat_id = ?", (new_chat_title, ch_id))
+                                    cursor.execute("UPDATE chats SET p2p_name2 = %s WHERE chat_id = %s", (new_chat_title, ch_id))
                                 conn.commit()
                                 st.rerun()
                     
@@ -302,17 +343,17 @@ if st.session_state.active_tab == "Чаты":
                         with st.popover("➕ Добавить участника"):
                             invite_id = st.text_input("Введите цифровой ID пользователя:").replace("ID-", "").strip()
                             if st.button("Добавить в группу", key=f"inv_{ch_id}"):
-                                cursor.execute("SELECT username FROM users WHERE uid = ?", (invite_id,))
+                                cursor.execute("SELECT username FROM users WHERE uid = %s", (invite_id,))
                                 if cursor.fetchone():
-                                    cursor.execute("INSERT OR IGNORE INTO group_members (chat_id, user_uid) VALUES (?, ?)", (ch_id, invite_id))
+                                    cursor.execute("INSERT OR IGNORE INTO group_members (chat_id, user_uid) VALUES (%s, %s)", (ch_id, invite_id))
                                     conn.commit()
                                     st.success("Пользователь добавлен!")
                                 else:
                                     st.error("Пользователь c таким ID не существует.")
 
-                cursor.execute("SELECT user_uid, username, text, media, media_type FROM messages WHERE chat_id = ? ORDER BY id ASC", (ch_id,))
+                cursor.execute("SELECT user_uid, username, text, media, media_type FROM messages WHERE chat_id = %s ORDER BY id ASC", (ch_id,))
                 for u_uid, u_name, text, media, m_type in cursor.fetchall():
-                    cursor.execute("SELECT avatar, nickname FROM users WHERE uid = ?", (u_uid,))
+                    cursor.execute("SELECT avatar, nickname FROM users WHERE uid = %s", (u_uid,))
                     u_data = cursor.fetchone()
                     av_blob = u_data[0] if u_data else None
                     display_author_name = u_data[1] if (u_data and u_data[1]) else u_name
@@ -322,8 +363,8 @@ if st.session_state.active_tab == "Чаты":
                         st.write(f"{display_author_name} <span style='color:#708599; font-size:12px;'>({u_uid})</span>", unsafe_allow_html=True)
                         if text: st.write(text)
                         if media:
-                            if m_type.startswith("image"): st.image(media, width=400)
-                            elif m_type.startswith("video"): st.video(media)
+                            if m_type.startswith("image"): st.image(bytes(media), width=400)
+                            elif m_type.startswith("video"): st.video(bytes(media))
                 
                 if is_chan == 2 and st.session_state.user_uid != creator_uid:
                     st.warning("🔒 Это канал. Здесь могут писать только администраторы.")
@@ -341,7 +382,7 @@ if st.session_state.active_tab == "Чаты":
                             file_bytes = uploaded_file.read()
                             file_type = uploaded_file.type
                         
-                        cursor.execute("INSERT INTO messages (chat_id, user_uid, username, text, media, media_type, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        cursor.execute("INSERT INTO messages (chat_id, user_uid, username, text, media, media_type, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s)",
                                        (ch_id, st.session_state.user_uid, st.session_state.nickname, prompt, file_bytes, file_type, time.time()))
                         conn.commit()
                         st.rerun()
@@ -352,12 +393,6 @@ if st.session_state.active_tab == "Чаты":
 
 elif st.session_state.active_tab == "Друзья":
     st.markdown("### 👥 Список ваших друзей")
-    
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS user_friends (
-        user_uid TEXT, friend_uid TEXT, PRIMARY KEY (user_uid, friend_uid)
-    )""")
-    conn.commit()
     
     col_f1, col_f2 = st.columns([3, 1])
     with col_f1: 
@@ -371,9 +406,9 @@ elif st.session_state.active_tab == "Друзья":
                 if friend_id == st.session_state.user_uid:
                     st.error("Нельзя добавить в друзья самого себя!")
                 else:
-                    cursor.execute("SELECT username FROM users WHERE uid = ?", (friend_id,))
+                    cursor.execute("SELECT username FROM users WHERE uid = %s", (friend_id,))
                     if cursor.fetchone():
-                        cursor.execute("INSERT OR IGNORE INTO user_friends (user_uid, friend_uid) VALUES (?, ?)", 
+                        cursor.execute("INSERT INTO user_friends (user_uid, friend_uid) VALUES (%s, %s) ON CONFLICT DO NOTHING", 
                                        (st.session_state.user_uid, friend_id))
                         conn.commit()
                         st.success("Пользователь успешно добавлен в друзья!")
@@ -388,7 +423,7 @@ elif st.session_state.active_tab == "Друзья":
         SELECT u.uid, u.nickname, u.username 
         FROM user_friends f
         JOIN users u ON f.friend_uid = u.uid
-        WHERE f.user_uid = ?
+        WHERE f.user_uid = %s
     """, (st.session_state.user_uid,))
     friends_list = cursor.fetchall()
     
@@ -399,16 +434,16 @@ elif st.session_state.active_tab == "Друзья":
             col_friend_info, col_friend_chat, col_friend_del = st.columns([5, 2, 1])
             
             with col_friend_info:
-                st.markdown(f"😎 {display_name} (ID: {f_id})")
+                st.markdown(f"😎 **{display_name}** `(ID: {f_id})`")
                 
             with col_friend_chat:
                 if st.button(f"💬 Начать чат", key=f"chat_with_{f_id}", use_container_width=True):
                     chat_id = f"p2p_{min(st.session_state.user_uid, f_id)}_{max(st.session_state.user_uid, f_id)}"
                     
                     cursor.execute("""
-                        INSERT OR IGNORE INTO chats 
+                        INSERT INTO chats 
                         (chat_id, chat_name, is_channel, creator_uid, p2p_user1, p2p_user2, p2p_name1, p2p_name2) 
-                        VALUES (?, ?, 0, NULL, ?, ?, ?, ?)
+                        VALUES (%s, %s, 0, NULL, %s, %s, %s, %s) ON CONFLICT DO NOTHING
                     """, (chat_id, f"Чат с {display_name}", st.session_state.user_uid, f_id, f"Чат с {display_name}", f"Чат с {st.session_state.nickname}"))
                     conn.commit()
                     
@@ -417,8 +452,8 @@ elif st.session_state.active_tab == "Друзья":
                     st.rerun()
                     
             with col_friend_del:
-                if st.button("🗑️", key=f"rem_fr_{f_id}", use_container_width=True):
-                    cursor.execute("DELETE FROM user_friends WHERE user_uid = ? AND friend_uid = ?", 
+                if st.button("🗑", key=f"rem_fr_{f_id}", use_container_width=True):
+                    cursor.execute("DELETE FROM user_friends WHERE user_uid = %s AND friend_uid = %s", 
                                    (st.session_state.user_uid, f_id))
                     conn.commit()
                     st.rerun()
@@ -436,7 +471,7 @@ elif st.session_state.active_tab == "Каналы":
             if c_name:
                 ch_id = f"pub_{uuid.uuid4().hex[:8]}"
                 is_chan_type = 1 if "Группа" in type_choice else 2
-                cursor.execute("INSERT INTO chats (chat_id, chat_name, is_channel, creator_uid) VALUES (?, ?, ?, ?)", 
+                cursor.execute("INSERT INTO chats (chat_id, chat_name, is_channel, creator_uid) VALUES (%s, %s, %s, %s)", 
                                (ch_id, c_name, is_chan_type, st.session_state.user_uid))
                 conn.commit()
                 st.success(f"Успешно создано!")
@@ -446,7 +481,7 @@ elif st.session_state.active_tab == "Каналы":
     st.markdown("### 🔍 Глобальный поиск каналов")
     search_query = st.text_input("Введите название канала для поиска (Группы скрыты из поиска):")
     if search_query:
-        cursor.execute("SELECT chat_id, chat_name, is_channel FROM chats WHERE chat_name LIKE ? AND is_channel = 2", (f"%{search_query}%",))
+        cursor.execute("SELECT chat_id, chat_name, is_channel FROM chats WHERE chat_name ILIKE %s AND is_channel = 2", (f"%{search_query}%",))
         search_results = cursor.fetchall()
         if search_results:
             for ch_id, ch_name, is_chan_type in search_results:
@@ -465,13 +500,13 @@ elif st.session_state.active_tab == "Профиль":
     st.markdown("### 👤 Настройки профиля")
     st.info(f"🧬 Ваш постоянный цифровой ID для друзей: {st.session_state.user_uid}")
     
-    cursor.execute("SELECT avatar, nickname FROM users WHERE uid = ?", (st.session_state.user_uid,))
+    cursor.execute("SELECT avatar, nickname FROM users WHERE uid = %s", (st.session_state.user_uid,))
     u_db_data = cursor.fetchone()
     current_avatar = u_db_data[0] if u_db_data else None
     current_nickname = u_db_data[1] if (u_db_data and u_db_data[1]) else st.session_state.username
     
     if current_avatar:
-        st.image(current_avatar, width=100, caption="Ваша текущая аватарка")
+        st.image(bytes(current_avatar), width=100, caption="Ваша текущая аватарка")
         
     col_p1, col_p2 = st.columns(2)
     with col_p1:
@@ -482,10 +517,10 @@ elif st.session_state.active_tab == "Профиль":
     
     if st.button("Сохранить изменения в профиле", use_container_width=True):
         st.session_state.nickname = new_nick
-        cursor.execute("UPDATE users SET nickname = ? WHERE uid = ?", (new_nick, st.session_state.user_uid))
+        cursor.execute("UPDATE users SET nickname = %s WHERE uid = %s", (new_nick, st.session_state.user_uid))
         if uploaded_avatar:
             avatar_bytes = uploaded_avatar.read()
-            cursor.execute("UPDATE users SET avatar = ? WHERE uid = ?", (avatar_bytes, st.session_state.user_uid))
+            cursor.execute("UPDATE users SET avatar = %s WHERE uid = %s", (avatar_bytes, st.session_state.user_uid))
         conn.commit()
         st.success("Профиль успешно обновлен!")
         st.rerun()
