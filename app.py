@@ -12,24 +12,42 @@ controller = CookieController()
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0e1621 !important; color: #ffffff; }
+    /* Блокируем глобальные цвета приложения под тёмную тему */
+    .stApp, html, body, [data-testid="stAppViewContainer"] { 
+        background-color: #0e1621 !important; 
+        color: #ffffff !important; 
+    }
+    
+    /* Текст во всем приложении */
+    h1, h2, h3, h4, h5, h6, p, span, label, div { 
+        color: #ffffff !important; 
+    }
+    
+    /* Поле ввода сообщения */
     .stChatInputContainer iframe { background-color: #17212b !important; }
+    .stChatInput textarea { color: #ffffff !important; background-color: #17212b !important; }
+    
+    /* Сообщения в чате */
     .stChatMessage {
         background-color: #182533 !important;
-        border-radius: 14px !important;
+        border-radius: 12px !important;
         padding: 10px !important;
-        margin-bottom: 14px !important;
+        margin-bottom: 10px !important;
+        color: #ffffff !important;
     }
+    
+    /* Боковое меню (скрываем) */
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="collapsedControl"] { display: none !important; }
     
+    /* Кнопки меню верхние */
     div.stButton > button {
         background-color: transparent !important;
         color: #708599 !important;
         border: none !important;
         font-size: 20px !important;
         font-weight: 600 !important;
-        padding: 20px 16px !important;
+        padding: 8px 16px !important;
         transition: color 0.3s ease;
     }
     div.stButton > button:hover { color: #5288c1 !important; background-color: transparent !important; }
@@ -38,6 +56,13 @@ st.markdown("""
         border-bottom: 3px solid #5288c1 !important;
         border-radius: 0px !important;
         background-color: transparent !important;
+    }
+    
+    /* Обычные инпуты (ввод текста/id) */
+    input {
+        background-color: #17212b !important;
+        color: #ffffff !important;
+        border: 1px solid #24303f !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -300,33 +325,62 @@ if st.session_state.active_tab == "Чаты":
             st.markdown("<h4 style='text-align: center; color: #708599; margin-top: 50px;'>Выберите диалог, группу или канал слева</h4>", unsafe_allow_html=True)
 
 elif st.session_state.active_tab == "Друзья":
-    st.markdown("### 👥 Личные диалоги по ID")
+    st.markdown("### 👥 Список ваших друзей")
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS user_friends (
+        user_uid TEXT, friend_uid TEXT, PRIMARY KEY (user_uid, friend_uid)
+    )""")
+    conn.commit()
+    
     col_f1, col_f2 = st.columns([3, 1])
     with col_f1: 
-        friend_input = st.text_input("Введите цифровой ID друга:")
+        friend_input = st.text_input("Введите цифровой ID пользователя, чтобы добавить в друзья:")
     with col_f2:
         st.write("##")
-        if st.button("Начать чат", use_container_width=True):
+        if st.button("Добавить в список", use_container_width=True):
             if friend_input:
                 friend_id = friend_input.replace("ID-", "").strip()
                 
-                cursor.execute("SELECT username, nickname FROM users WHERE uid = ?", (friend_id,))
-                f_exist = cursor.fetchone()
-                if f_exist:
-                    friend_display_name = f_exist[1] if f_exist[1] else f_exist[0]
-                    chat_id = f"p2p_{min(st.session_state.user_uid, friend_id)}_{max(st.session_state.user_uid, friend_id)}"
-                    
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO chats 
-                        (chat_id, chat_name, is_channel, creator_uid, p2p_user1, p2p_user2, p2p_name1, p2p_name2) 
-                        VALUES (?, ?, 0, NULL, ?, ?, ?, ?)
-                    """, (chat_id, f"Чат с {friend_display_name}", st.session_state.user_uid, friend_id, f"Чат с {friend_display_name}", f"Чат с {st.session_state.nickname}"))
-                    conn.commit()
-                    st.session_state.current_chat = chat_id
-                    st.session_state.active_tab = "Чаты"
-                    st.rerun()
+                if friend_id == st.session_state.user_uid:
+                    st.error("Нельзя добавить в друзья самого себя!")
                 else:
-                    st.error("Пользователь с таким цифровым ID не найден.")
+                    # Проверяем, есть ли такой человек в базе
+                    cursor.execute("SELECT username FROM users WHERE uid = ?", (friend_id,))
+                    if cursor.fetchone():
+                        cursor.execute("INSERT OR IGNORE INTO user_friends (user_uid, friend_uid) VALUES (?, ?)", 
+                                       (st.session_state.user_uid, friend_id))
+                        conn.commit()
+                        st.success("Пользователь успешно добавлен в друзья!")
+                        st.rerun()
+                    else:
+                        st.error("Пользователь с таким цифровым ID не найден.")
+
+    st.write("---")
+    st.markdown("### 📇 Мои контакты")
+    
+    cursor.execute("""
+        SELECT u.uid, u.nickname, u.username 
+        FROM user_friends f
+        JOIN users u ON f.friend_uid = u.uid
+        WHERE f.user_uid = ?
+    """, (st.session_state.user_uid,))
+    friends_list = cursor.fetchall()
+    
+    if friends_list:
+        for f_id, f_nick, f_login in friends_list:
+            display_name = f_nick if f_nick else f_login
+            col_friend_info, col_friend_del = st.columns([4, 1])
+            with col_friend_info:
+                st.markdown(f"😎 {display_name} (ID: {f_id})")
+            with col_friend_del:
+                if st.button("Удалить", key=f"rem_fr_{f_id}"):
+                    cursor.execute("DELETE FROM user_friends WHERE user_uid = ? AND friend_uid = ?", 
+                                   (st.session_state.user_uid, f_id))
+                    conn.commit()
+                    st.rerun()
+    else:
+        st.info("Ваш список друзей пока пуст.")
 
 elif st.session_state.active_tab == "Каналы":
     st.markdown("### 📢 Управление группами и каналами")
@@ -349,7 +403,6 @@ elif st.session_state.active_tab == "Каналы":
     st.markdown("### 🔍 Глобальный поиск каналов")
     search_query = st.text_input("Введите название канала для поиска (Группы скрыты из поиска):")
     if search_query:
-        # Поиск ищет ТОЛЬКО по каналам (is_channel = 2), приватные группы (1) защищены от поиска
         cursor.execute("SELECT chat_id, chat_name, is_channel FROM chats WHERE chat_name LIKE ? AND is_channel = 2", (f"%{search_query}%",))
         search_results = cursor.fetchall()
         if search_results:
