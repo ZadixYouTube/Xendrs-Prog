@@ -183,7 +183,7 @@ def set_tab(tab_name):
 
 col_logo, col_t1, col_t2, col_t3, col_t4, _ = st.columns([2, 1.5, 1.5, 1.5, 1.5, 4.5])
 with col_logo:
-    st.markdown("<h2 style='margin:0; background: linear-gradient(90deg, #a78bfa, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight:800;'>PaLexis-Chat 0.2.4</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin:0; background: linear-gradient(90deg, #a78bfa, #60a5fa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight:800;'>PaLexis Chat 0.2.4</h2>", unsafe_allow_html=True)
 
 if st.session_state.logged_in:
     with col_t1: st.button("💬 Чаты", key="t_chats", disabled=(st.session_state.active_tab == "Чаты"), on_click=set_tab, args=("Чаты",))
