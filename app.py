@@ -29,7 +29,7 @@ st.markdown("""
         border: none !important;
         font-size: 20px !important;
         font-weight: 600 !important;
-        padding: 8px 16px !important;
+        padding: 14px 16px !important;
         transition: color 0.3s ease;
     }
     div.stButton > button:hover { color: #5288c1 !important; background-color: transparent !important; }
