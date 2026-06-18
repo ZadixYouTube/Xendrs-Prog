@@ -1,10 +1,59 @@
 import streamlit as st
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import hashlib
 import uuid
 import random
 import time
 from streamlit_cookies_controller import CookieController
+
+DB_URL = "postgresql://neondb_owner:npg_ywHr6FhD3keR@ep-winter-surf-ab4vv5c5.eu-west-2.aws.neon.tech/neondb?sslmode=require"
+
+def get_db_connection():
+    conn = psycopg2.connect(DB_URL)
+    conn.autocommit = True
+    return conn
+
+conn = get_db_connection()
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    uid TEXT PRIMARY KEY,
+    username TEXT UNIQUE,
+    password TEXT,
+    nickname TEXT,
+    balance REAL DEFAULT 0.0
+)""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS chats (
+    chat_id TEXT PRIMARY KEY,
+    chat_name TEXT,
+    is_channel INTEGER DEFAULT 0,
+    creator_uid TEXT,
+    p2p_user1 TEXT,
+    p2p_user2 TEXT,
+    p2p_name1 TEXT,
+    p2p_name2 TEXT
+)""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    chat_id TEXT,
+    sender_uid TEXT,
+    sender_name TEXT,
+    text TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS user_friends (
+    user_uid TEXT, 
+    friend_uid TEXT, 
+    PRIMARY KEY (user_uid, friend_uid)
+)""")
 
 st.set_page_config(page_title="PaLexis-Chat", page_icon="💜", layout="wide")
 
@@ -66,29 +115,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-conn = sqlite3.connect("messenger.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS users (
-    uid TEXT PRIMARY KEY, username TEXT, password TEXT, avatar BLOB, device_token TEXT, nickname TEXT
-)""")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS chats (
-    chat_id TEXT PRIMARY KEY, chat_name TEXT, is_channel INTEGER, creator_uid TEXT,
-    p2p_user1 TEXT, p2p_user2 TEXT, p2p_name1 TEXT, p2p_name2 TEXT
-)""")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS group_members (
-    chat_id TEXT, user_uid TEXT, PRIMARY KEY (chat_id, user_uid)
-)""")
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, user_uid TEXT, 
-    username TEXT, text TEXT, media BLOB, media_type TEXT, timestamp REAL
-)""")
-conn.commit()
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
