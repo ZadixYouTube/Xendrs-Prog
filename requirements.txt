@@ -1,2 +1,3 @@
 streamlit
 streamlit-cookies-controller
+psycopg2-binary
