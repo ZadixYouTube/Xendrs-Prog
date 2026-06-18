@@ -16,9 +16,9 @@ st.markdown("""
     .stChatInputContainer iframe { background-color: #17212b !important; }
     .stChatMessage {
         background-color: #182533 !important;
-        border-radius: 12px !important;
+        border-radius: 14px !important;
         padding: 10px !important;
-        margin-bottom: 10px !important;
+        margin-bottom: 14px !important;
     }
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="collapsedControl"] { display: none !important; }
@@ -91,7 +91,7 @@ def set_tab(tab_name):
 
 col_logo, col_t1, col_t2, col_t3, col_t4, _ = st.columns([2, 1.5, 1.5, 1.5, 1.5, 4.5])
 with col_logo:
-    st.markdown("<h2 style='margin:0; color:#5288c1; font-weight:700;'>PaLexis-Chat(0.2)</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='margin:0; color:#5288c1; font-weight:700;'>PaLexis-Chat 0.2</h2>", unsafe_allow_html=True)
 
 if st.session_state.logged_in:
     with col_t1: st.button("Чаты", key="t_chats", disabled=(st.session_state.active_tab == "Чаты"), on_click=set_tab, args=("Чаты",))
