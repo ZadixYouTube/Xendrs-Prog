@@ -345,7 +345,6 @@ elif st.session_state.active_tab == "Друзья":
                 if friend_id == st.session_state.user_uid:
                     st.error("Нельзя добавить в друзья самого себя!")
                 else:
-                    # Проверяем, есть ли такой человек в базе
                     cursor.execute("SELECT username FROM users WHERE uid = ?", (friend_id,))
                     if cursor.fetchone():
                         cursor.execute("INSERT OR IGNORE INTO user_friends (user_uid, friend_uid) VALUES (?, ?)", 
@@ -370,11 +369,29 @@ elif st.session_state.active_tab == "Друзья":
     if friends_list:
         for f_id, f_nick, f_login in friends_list:
             display_name = f_nick if f_nick else f_login
-            col_friend_info, col_friend_del = st.columns([4, 1])
+            
+            col_friend_info, col_friend_chat, col_friend_del = st.columns([5, 2, 1])
+            
             with col_friend_info:
                 st.markdown(f"😎 {display_name} (ID: {f_id})")
+                
+            with col_friend_chat:
+                if st.button(f"💬 Начать чат", key=f"chat_with_{f_id}", use_container_width=True):
+                    chat_id = f"p2p_{min(st.session_state.user_uid, f_id)}_{max(st.session_state.user_uid, f_id)}"
+                    
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO chats 
+                        (chat_id, chat_name, is_channel, creator_uid, p2p_user1, p2p_user2, p2p_name1, p2p_name2) 
+                        VALUES (?, ?, 0, NULL, ?, ?, ?, ?)
+                    """, (chat_id, f"Чат с {display_name}", st.session_state.user_uid, f_id, f"Чат с {display_name}", f"Чат с {st.session_state.nickname}"))
+                    conn.commit()
+                    
+                    st.session_state.current_chat = chat_id
+                    st.session_state.active_tab = "Чаты"
+                    st.rerun()
+                    
             with col_friend_del:
-                if st.button("Удалить", key=f"rem_fr_{f_id}"):
+                if st.button("🗑️", key=f"rem_fr_{f_id}", use_container_width=True):
                     cursor.execute("DELETE FROM user_friends WHERE user_uid = ? AND friend_uid = ?", 
                                    (st.session_state.user_uid, f_id))
                     conn.commit()
